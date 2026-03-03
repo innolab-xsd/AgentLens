@@ -211,6 +211,54 @@
   font-size: 0.8rem;
 }
 
+.reviewer-focus__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+}
+
+.reviewer-focus__table th,
+.reviewer-focus__table td {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+  padding: 0.42rem 0.35rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.reviewer-focus__table tbody tr {
+  cursor: pointer;
+}
+
+.reviewer-focus__table tbody tr.is-selected {
+  background: rgba(45, 212, 191, 0.12);
+}
+
+.token-bar {
+  margin-top: 0.25rem;
+  width: 100%;
+  height: 7px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(30, 41, 59, 0.8);
+  display: flex;
+}
+
+.token-bar span {
+  height: 100%;
+}
+
+.token-bar__context {
+  background: #38bdf8;
+}
+
+.token-bar__output {
+  background: #22c55e;
+}
+
+.token-bar__unknown {
+  background: #f59e0b;
+}
+
 /* Smooth crossfade when switching Flow ↔ Node view (View Transitions API) */
 @supports (view-transition-name: none) {
   ::view-transition-old(replay-main),

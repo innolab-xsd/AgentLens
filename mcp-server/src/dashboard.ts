@@ -13,6 +13,13 @@ import {
 import { exportSessionJson } from "./store.js";
 import { handleGatewayAct, handleGatewayBeginRun, handleGatewayEndRun } from "./tools.js";
 import { ingestRawContent } from "./ingest.js";
+import {
+  deriveIntentTokenBreakdown,
+  generateFollowupArtifacts,
+  type FollowupFocus,
+  type FollowupMode,
+  type FollowupStrictness,
+} from "./local-analysis.js";
 
 interface SessionFileSummary {
   key: string;
@@ -664,7 +671,17 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
     try {
       const body = await readJsonBody(req);
       const scope = typeof body.scope === "string" ? body.scope : "session";
-      const focus = typeof body.focus === "string" ? body.focus : "risk";
+      const focus: FollowupFocus =
+        body.focus === "risk" ||
+        body.focus === "verification_gap" ||
+        body.focus === "hotspot" ||
+        body.focus === "rework_pattern" ||
+        body.focus === "efficiency"
+          ? body.focus
+          : "risk";
+      const mode: FollowupMode = body.mode === "session" ? "session" : "per_intent";
+      const strictness: FollowupStrictness =
+        body.strictness === "advisory" || body.strictness === "hard" ? body.strictness : "soft";
       const importSetId = typeof body.import_set_id === "string" ? body.import_set_id : "";
       const sessionId = typeof body.session_id === "string" ? body.session_id : "";
       const summaries = listSessionFiles();
@@ -693,10 +710,16 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
         return true;
       }
 
-      const generated = buildFollowupFromEvents(collectedEvents, focus);
+      const generated = generateFollowupArtifacts(collectedEvents, {
+        focus,
+        mode,
+        strictness,
+      });
       json(res, 200, {
         scope,
         focus,
+        mode,
+        strictness,
         session_ids: scopedSessionIds,
         generated_at: new Date().toISOString(),
         ...generated,
@@ -736,6 +759,29 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
       } catch (error) {
         json(res, 500, {
           error: error instanceof Error ? error.message : "Failed to export session.",
+        });
+      }
+      return true;
+    }
+
+    if (key.endsWith("/token-breakdown")) {
+      const rawKey = key.slice(0, -"/token-breakdown".length);
+      const summary = listSessionFiles().find((item) => item.key === rawKey || item.session_id === rawKey);
+      if (!summary) {
+        json(res, 404, { error: "Session not found." });
+        return true;
+      }
+      try {
+        const payload = readSessionFile(summary.absolute_path);
+        const breakdown = deriveIntentTokenBreakdown(payload.events);
+        json(res, 200, {
+          session_id: summary.session_id,
+          generated_at: new Date().toISOString(),
+          ...breakdown,
+        });
+      } catch (error) {
+        json(res, 500, {
+          error: error instanceof Error ? error.message : "Failed to derive token breakdown.",
         });
       }
       return true;

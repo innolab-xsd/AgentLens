@@ -13,6 +13,12 @@ import { FlowView } from "./FlowView";
 import { ReviewerHighlights } from "./ReviewerHighlights";
 import { ReviewerFocusPanel } from "./ReviewerFocusPanel";
 import { ContextPathView } from "./ContextPathView";
+import {
+  deriveIntentTokenBreakdown,
+  generateFollowupArtifacts,
+  type FollowupGenerationResult,
+  type TokenBreakdownResult,
+} from "../lib/localDeterministic";
 
 import "./ReplayView.css";
 
@@ -23,20 +29,8 @@ interface ReplayViewProps {
   onBack: () => void;
 }
 
-interface FollowupGenerateResponse {
-  insufficient_evidence: boolean;
-  confidence: number;
-  value_claims: {
-    risk_mitigation: string[];
-    efficiency_improvement: string[];
-    quality_standardization: string[];
-  };
-  evidence_refs: Array<{ event_id: string; file?: string; reason: string }>;
-  rule_spec: Record<string, unknown>;
-  skill_draft: string;
-}
-
-const API_BASE = (import.meta.env.VITE_AUDIT_API_BASE as string | undefined)?.trim() ?? "";
+type FollowupGenerateResponse = FollowupGenerationResult;
+type TokenBreakdownResponse = TokenBreakdownResult;
 
 export function ReplayView({ session, onBack }: ReplayViewProps) {
   const segments = getSegments(session);
@@ -94,6 +88,9 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
   const [speed, setSpeed] = useState<1 | 2>(1);
   const [followupResult, setFollowupResult] = useState<FollowupGenerateResponse | null>(null);
   const [followupStatus, setFollowupStatus] = useState<string>("");
+  const [tokenBreakdown, setTokenBreakdown] = useState<TokenBreakdownResponse | null>(null);
+  const [tokenStatus, setTokenStatus] = useState<string>("");
+  const [selectedIntentCost, setSelectedIntentCost] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const isWorkflowView = viewMode === "pivot";
@@ -183,27 +180,42 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
   const handlePlay = useCallback(() => setIsPlaying(true), []);
   const handlePause = useCallback(() => stopPlayback(), [stopPlayback]);
 
-  const handleGenerateFollowup = useCallback(async () => {
-    setFollowupStatus("Generating rule + skill draft...");
+  const handleGenerateFollowup = useCallback(() => {
+    setFollowupStatus("Generating rule + skill draft locally...");
     setFollowupResult(null);
     try {
-      const response = await fetch(`${API_BASE}/api/followup/generate`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          scope: "session",
-          session_id: session.id,
-          focus: "risk",
-        }),
+      const data = generateFollowupArtifacts(session.events, {
+        focus: "risk",
+        mode: "per_intent",
+        strictness: "soft",
       });
-      const data = (await response.json()) as FollowupGenerateResponse & { error?: string };
-      if (!response.ok) throw new Error(data.error ?? `Follow-up generation failed (${response.status})`);
       setFollowupResult(data);
-      setFollowupStatus("Follow-up artifacts generated.");
+      setFollowupStatus("Follow-up artifacts generated locally.");
     } catch (error) {
       setFollowupStatus(error instanceof Error ? error.message : "Failed to generate follow-up artifacts.");
     }
-  }, [session.id]);
+  }, [session.events]);
+
+  const copyText = useCallback(async (value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      // ignore clipboard failures in unsupported contexts
+    }
+  }, []);
+
+  useEffect(() => {
+    setTokenStatus("Computing intent token breakdown locally...");
+    try {
+      const data = deriveIntentTokenBreakdown(session.events);
+      setTokenBreakdown(data);
+      setSelectedIntentCost(data.intent_breakdown[0]?.intent_id ?? null);
+      setTokenStatus("");
+    } catch (error) {
+      setTokenBreakdown(null);
+      setTokenStatus(error instanceof Error ? error.message : "Token breakdown unavailable.");
+    }
+  }, [session.events]);
 
   const selectedSegment =
     selectedSegmentIndex != null && segments[selectedSegmentIndex]
@@ -373,6 +385,88 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
                       </article>
                     </div>
                   </section>
+                  <section className="reviewer-focus">
+                    <header className="reviewer-focus__alert">
+                      <h2>Intent Cost</h2>
+                      <p>Token consumption per intent, split into context-building vs output-producing usage.</p>
+                    </header>
+                    {tokenStatus ? <p>{tokenStatus}</p> : null}
+                    {tokenBreakdown ? (
+                      <>
+                        <div className="reviewer-focus__card reviewer-focus__card--wide">
+                          <p>
+                            Total {tokenBreakdown.totals.total_tokens.toLocaleString()} tokens · context{" "}
+                            {tokenBreakdown.totals.context_tokens.toLocaleString()} · output{" "}
+                            {tokenBreakdown.totals.output_tokens.toLocaleString()} · unknown{" "}
+                            {tokenBreakdown.totals.unknown_tokens.toLocaleString()}
+                          </p>
+                        </div>
+                        <div className="reviewer-focus__card reviewer-focus__card--wide">
+                          <table className="reviewer-focus__table">
+                            <thead>
+                              <tr>
+                                <th>Intent</th>
+                                <th>Total</th>
+                                <th>Context</th>
+                                <th>Output</th>
+                                <th>Unknown</th>
+                                <th>Cost</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {tokenBreakdown.intent_breakdown.map((row) => {
+                                const total = Math.max(1, row.total_tokens);
+                                const contextPct = Math.round((row.context_tokens / total) * 100);
+                                const outputPct = Math.round((row.output_tokens / total) * 100);
+                                const unknownPct = Math.max(0, 100 - contextPct - outputPct);
+                                return (
+                                  <tr
+                                    key={row.intent_id}
+                                    className={selectedIntentCost === row.intent_id ? "is-selected" : ""}
+                                    onClick={() => setSelectedIntentCost(row.intent_id)}
+                                  >
+                                    <td>{row.intent_title}</td>
+                                    <td>{row.total_tokens.toLocaleString()}</td>
+                                    <td>
+                                      {row.context_tokens.toLocaleString()}
+                                      <div className="token-bar">
+                                        <span className="token-bar__context" style={{ width: `${contextPct}%` }} />
+                                        <span className="token-bar__output" style={{ width: `${outputPct}%` }} />
+                                        <span className="token-bar__unknown" style={{ width: `${unknownPct}%` }} />
+                                      </div>
+                                    </td>
+                                    <td>{row.output_tokens.toLocaleString()}</td>
+                                    <td>{row.unknown_tokens.toLocaleString()}</td>
+                                    <td>{row.estimated_cost_usd != null ? `$${row.estimated_cost_usd}` : "-"}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                        {selectedIntentCost ? (
+                          <div className="reviewer-focus__card reviewer-focus__card--wide">
+                            <h3>Token Drill-down</h3>
+                            {tokenBreakdown.intent_breakdown
+                              .filter((row) => row.intent_id === selectedIntentCost)
+                              .map((row) => (
+                                <ul key={row.intent_id}>
+                                  {row.supporting_events.slice(0, 12).map((item) => (
+                                    <li key={item.checkpoint_event_id}>
+                                      <button type="button" onClick={() => handleSeek(Math.max(0, row.event_window.start_seq - 1))}>
+                                        {item.checkpoint_event_id}
+                                      </button>{" "}
+                                      · total {item.total_tokens} · context {item.context_tokens} · output{" "}
+                                      {item.output_tokens} · unknown {item.unknown_tokens}
+                                    </li>
+                                  ))}
+                                </ul>
+                              ))}
+                          </div>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </section>
                   <SegmentDetailView
                     session={session}
                     segment={selectedSegment}
@@ -389,26 +483,59 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
                     </button>
                     {followupStatus ? <p>{followupStatus}</p> : null}
                     {followupResult ? (
-                      <div className="reviewer-focus__grid reviewer-focus__grid--2">
-                        <article className="reviewer-focus__card">
-                          <h3>Why this helps</h3>
-                          <ul>
-                            {followupResult.value_claims.risk_mitigation.map((item, index) => (
-                              <li key={`risk-${index}`}>{item}</li>
-                            ))}
-                            {followupResult.value_claims.efficiency_improvement.map((item, index) => (
-                              <li key={`eff-${index}`}>{item}</li>
-                            ))}
-                            {followupResult.value_claims.quality_standardization.map((item, index) => (
-                              <li key={`qual-${index}`}>{item}</li>
-                            ))}
-                          </ul>
-                        </article>
-                        <article className="reviewer-focus__card">
-                          <h3>Skill Draft Preview</h3>
-                          <pre className="code-block">{followupResult.skill_draft}</pre>
-                        </article>
-                      </div>
+                      <>
+                        <p>
+                          Intents: {followupResult.summary.intent_count} · high-risk intents:{" "}
+                          {followupResult.summary.high_risk_intents} · high waste intents:{" "}
+                          {followupResult.summary.high_efficiency_waste_intents}
+                        </p>
+                        <div className="reviewer-focus__grid reviewer-focus__grid--2">
+                          {followupResult.artifacts.map((artifact) => (
+                            <article className="reviewer-focus__card" key={artifact.intent_id}>
+                              <h3>{artifact.intent_title}</h3>
+                              <p>
+                                template <code>{artifact.rule_template_id}</code> · confidence {artifact.confidence}
+                              </p>
+                              <p>
+                                risk {artifact.features.risk_score} · waste {artifact.features.efficiency_waste_score}
+                                {" "}· stability {artifact.features.stability_score}
+                              </p>
+                              <ul>
+                                {artifact.value_claims.risk_mitigation.map((item, index) => (
+                                  <li key={`risk-${artifact.intent_id}-${index}`}>{item}</li>
+                                ))}
+                                {artifact.value_claims.efficiency_improvement.map((item, index) => (
+                                  <li key={`eff-${artifact.intent_id}-${index}`}>{item}</li>
+                                ))}
+                                {artifact.value_claims.quality_standardization.map((item, index) => (
+                                  <li key={`qual-${artifact.intent_id}-${index}`}>{item}</li>
+                                ))}
+                              </ul>
+                              <details>
+                                <summary>Evidence refs ({artifact.evidence_refs.length})</summary>
+                                <ul>
+                                  {artifact.evidence_refs.slice(0, 10).map((item) => (
+                                    <li key={`${artifact.intent_id}-${item.event_id}`}>
+                                      {item.event_id} · {item.reason}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </details>
+                              <div className="reviewer-focus__actions">
+                                <button
+                                  type="button"
+                                  onClick={() => void copyText(JSON.stringify(artifact.rule_spec, null, 2))}
+                                >
+                                  Copy Rule JSON
+                                </button>
+                                <button type="button" onClick={() => void copyText(artifact.skill_draft)}>
+                                  Copy SKILL.md
+                                </button>
+                              </div>
+                            </article>
+                          ))}
+                        </div>
+                      </>
                     ) : null}
                   </section>
                 </>

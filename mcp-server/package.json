@@ -26,7 +26,7 @@
     "ingest:auto": "node dist/index.js ingest --adapter auto",
     "ingest:codex": "node dist/index.js ingest --adapter codex_jsonl",
     "ingest:cursor": "node dist/index.js ingest --adapter cursor_raw",
-    "test": "npm run build && node --test dist/__tests__/ingest.test.js",
+    "test": "npm run build && node --test dist/__tests__/*.test.js",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
