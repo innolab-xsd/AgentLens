@@ -1,18 +1,16 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import type { Session } from "../types/session";
-import { getSegments } from "../lib/segments";
-import { getChangedFiles, getRevisionIndexForEvent } from "../lib/fileEvolution";
+import { getRevisionIndexForEvent } from "../lib/fileEvolution";
 import { runAuditPostProcessing } from "../lib/auditPipeline";
-import { PlanNodesPanel } from "./PlanNodesPanel";
-import { ChangedFilesList } from "./ChangedFilesList";
-import { SegmentDetailView } from "./SegmentDetailView";
-import { FileEvolutionView } from "./FileEvolutionView";
 import { TimelineStrip } from "./TimelineStrip";
 import { PlaybackControls } from "./PlaybackControls";
 import { FlowView } from "./FlowView";
 import { ReviewerHighlights } from "./ReviewerHighlights";
 import { ReviewerFocusPanel } from "./ReviewerFocusPanel";
 import { ContextPathView } from "./ContextPathView";
+import { DeliverablesList } from "./DeliverablesList";
+import { FileEvolutionView } from "./FileEvolutionView";
+import { deriveDeliverables, type DeliverableItem } from "../lib/deliverables";
 import {
   deriveIntentTokenBreakdown,
   generateFollowupArtifacts,
@@ -24,6 +22,8 @@ import "./ReplayView.css";
 
 const BASE_INTERVAL_MS = 2000;
 
+type DeliverableTab = "what_changed" | "why_changed" | "cost";
+
 interface ReplayViewProps {
   session: Session;
   onBack: () => void;
@@ -32,13 +32,15 @@ interface ReplayViewProps {
 type FollowupGenerateResponse = FollowupGenerationResult;
 type TokenBreakdownResponse = TokenBreakdownResult;
 
+function formatPercent(value: number): string {
+  return `${Math.max(0, Math.min(100, Math.round(value)))}%`;
+}
+
 export function ReplayView({ session, onBack }: ReplayViewProps) {
-  const segments = getSegments(session);
   const { normalized, reviewer } = useMemo(
     () => runAuditPostProcessing(session.events),
     [session.events]
   );
-  const changedFiles = useMemo(() => getChangedFiles(session), [session]);
 
   const criticalEvents = useMemo(() => {
     const out: Array<{ index: number; severity: "high" | "medium"; reason: string }> = [];
@@ -72,18 +74,19 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
     out.sort((a, b) => a.index - b.index);
     return out;
   }, [session.events]);
+
   const criticalIndices = useMemo(
     () => [...new Set(criticalEvents.map((e) => e.index))],
     [criticalEvents]
   );
+
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [selectedSegmentIndex, setSelectedSegmentIndex] = useState<
-    number | null
-  >(segments.length > 0 ? 0 : null);
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [selectedRevisionIndex, setSelectedRevisionIndex] = useState(0);
   const [viewMode, setViewMode] = useState<"timeline" | "pivot">("timeline");
   const [timelineTab, setTimelineTab] = useState<"deliverables" | "context" | "reviewer">("deliverables");
+  const [deliverableTab, setDeliverableTab] = useState<DeliverableTab>("what_changed");
+  const [selectedDeliverableId, setSelectedDeliverableId] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState<1 | 2>(1);
   const [followupResult, setFollowupResult] = useState<FollowupGenerateResponse | null>(null);
@@ -113,14 +116,6 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
     };
   }, []);
 
-  // Keep selected plan node and detail view in sync with current event (playback or scrub)
-  useEffect(() => {
-    const segIdx = segments.findIndex((s) =>
-      s.eventIndices.includes(currentIndex),
-    );
-    setSelectedSegmentIndex(segIdx >= 0 ? segIdx : null);
-  }, [currentIndex, segments]);
-
   useEffect(() => {
     if (!isPlaying) return;
     if (atEnd) {
@@ -146,35 +141,17 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
     (index: number) => {
       setCurrentIndex(index);
       if (isPlaying) stopPlayback();
-      const segIdx = segments.findIndex((s) => s.eventIndices.includes(index));
-      if (segIdx >= 0) setSelectedSegmentIndex(segIdx);
     },
-    [isPlaying, stopPlayback, segments],
+    [isPlaying, stopPlayback]
   );
-
-  const handleSelectSegment = useCallback(
-    (index: number) => {
-      setSelectedSegmentIndex(index);
-      setSelectedFilePath(null);
-      const seg = segments[index];
-      if (seg) setCurrentIndex(seg.planStepIndex);
-    },
-    [segments],
-  );
-
-  const handleSelectFile = useCallback((path: string) => {
-    setSelectedFilePath(path);
-    setSelectedRevisionIndex(0);
-  }, []);
 
   const handleOpenFileEvolution = useCallback(
     (path: string, eventIndex: number) => {
       setSelectedFilePath(path);
-      setSelectedRevisionIndex(
-        getRevisionIndexForEvent(session, path, eventIndex),
-      );
+      setSelectedRevisionIndex(getRevisionIndexForEvent(session, path, eventIndex));
+      setCurrentIndex(eventIndex);
     },
-    [session],
+    [session]
   );
 
   const handlePlay = useCallback(() => setIsPlaying(true), []);
@@ -217,15 +194,153 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
     }
   }, [session.events]);
 
-  const selectedSegment =
-    selectedSegmentIndex != null && segments[selectedSegmentIndex]
-      ? segments[selectedSegmentIndex]
-      : null;
+  const deliverables = useMemo(
+    () => deriveDeliverables(session, tokenBreakdown?.intent_breakdown ?? []),
+    [session, tokenBreakdown]
+  );
+
+  useEffect(() => {
+    if (deliverables.length === 0) {
+      setSelectedDeliverableId(null);
+      setSelectedFilePath(null);
+      return;
+    }
+    const selectedStillExists = selectedDeliverableId
+      ? deliverables.some((item) => item.id === selectedDeliverableId)
+      : false;
+    const nextSelectedId = selectedStillExists ? selectedDeliverableId : deliverables[0].id;
+    setSelectedDeliverableId(nextSelectedId);
+    const deliverable = deliverables.find((item) => item.id === nextSelectedId);
+    if (deliverable) {
+      setSelectedFilePath(deliverable.path);
+      setSelectedRevisionIndex(0);
+    }
+  }, [deliverables, selectedDeliverableId]);
+
+  const selectedDeliverable = useMemo(
+    () => deliverables.find((item) => item.id === selectedDeliverableId) ?? null,
+    [deliverables, selectedDeliverableId]
+  );
+
+  const intentById = useMemo(() => {
+    const map = new Map<string, TokenBreakdownResponse["intent_breakdown"][number]>();
+    for (const item of tokenBreakdown?.intent_breakdown ?? []) {
+      map.set(item.intent_id, item);
+    }
+    return map;
+  }, [tokenBreakdown]);
+
+  const handleSelectDeliverable = useCallback((id: string) => {
+    setSelectedDeliverableId(id);
+    setDeliverableTab("what_changed");
+  }, []);
+
+  const renderWhyChanged = useCallback(
+    (deliverable: DeliverableItem) => {
+      const contributions = deliverable.intent_contributions;
+      if (contributions.length === 0) {
+        return <p className="replay-placeholder-note">No intent links were detected for this deliverable.</p>;
+      }
+      return (
+        <div className="deliverable-intents">
+          {contributions.map((item, index) => {
+            const intent = intentById.get(item.intent_id);
+            const roleLabel = index === 0 ? "Primary intent" : "Related intent";
+            return (
+              <article className="deliverable-intent-card" key={`${deliverable.id}-${item.intent_id}`}>
+                <header>
+                  <h4>{intent?.intent_title ?? item.intent_id}</h4>
+                  <span>{roleLabel}</span>
+                </header>
+                <p>
+                  Contribution: <strong>{formatPercent(item.percent)}</strong>
+                </p>
+                {intent ? (
+                  <p>
+                    Tokens {intent.total_tokens.toLocaleString()} · context {intent.context_tokens.toLocaleString()} ·
+                    output {intent.output_tokens.toLocaleString()} · unknown {intent.unknown_tokens.toLocaleString()}
+                  </p>
+                ) : (
+                  <p>No token telemetry linked for this intent.</p>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      );
+    },
+    [intentById]
+  );
+
+  const renderCost = useCallback(
+    (deliverable: DeliverableItem) => {
+      const rows = deliverable.intent_contributions.map((item) => {
+        const intent = intentById.get(item.intent_id);
+        const ratio = Math.max(0, Math.min(1, item.percent / 100));
+        const total = Math.round((intent?.total_tokens ?? 0) * ratio);
+        const context = Math.round((intent?.context_tokens ?? 0) * ratio);
+        const output = Math.round((intent?.output_tokens ?? 0) * ratio);
+        const unknown = Math.round((intent?.unknown_tokens ?? 0) * ratio);
+        return {
+          intentId: item.intent_id,
+          intentTitle: intent?.intent_title ?? item.intent_id,
+          contributionPct: item.percent,
+          total,
+          context,
+          output,
+          unknown,
+          cost: intent?.estimated_cost_usd != null ? Number((intent.estimated_cost_usd * ratio).toFixed(6)) : null,
+        };
+      });
+      return (
+        <div className="reviewer-focus__card reviewer-focus__card--wide">
+          <table className="reviewer-focus__table">
+            <thead>
+              <tr>
+                <th>Intent</th>
+                <th>Contribution</th>
+                <th>Total</th>
+                <th>Context</th>
+                <th>Output</th>
+                <th>Unknown</th>
+                <th>Cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => {
+                const total = Math.max(1, row.total);
+                const contextPct = Math.round((row.context / total) * 100);
+                const outputPct = Math.round((row.output / total) * 100);
+                const unknownPct = Math.max(0, 100 - contextPct - outputPct);
+                return (
+                  <tr key={`${deliverable.id}-${row.intentId}`}>
+                    <td>{row.intentTitle}</td>
+                    <td>{formatPercent(row.contributionPct)}</td>
+                    <td>{row.total.toLocaleString()}</td>
+                    <td>
+                      {row.context.toLocaleString()}
+                      <div className="token-bar">
+                        <span className="token-bar__context" style={{ width: `${contextPct}%` }} />
+                        <span className="token-bar__output" style={{ width: `${outputPct}%` }} />
+                        <span className="token-bar__unknown" style={{ width: `${unknownPct}%` }} />
+                      </div>
+                    </td>
+                    <td>{row.output.toLocaleString()}</td>
+                    <td>{row.unknown.toLocaleString()}</td>
+                    <td>{row.cost != null ? `$${row.cost}` : "-"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      );
+    },
+    [intentById]
+  );
 
   return (
-    <div
-      className={`replay-view ${isWorkflowView ? "replay-view--workflow" : ""}`}
-    >
+    <div className={`replay-view ${isWorkflowView ? "replay-view--workflow" : ""}`}>
       <header className="replay-header">
         <button
           type="button"
@@ -235,9 +350,7 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
         >
           ← Back
         </button>
-        <h1
-          className={`replay-title ${isWorkflowView ? "replay-title--workflow" : ""}`}
-        >
+        <h1 className={`replay-title ${isWorkflowView ? "replay-title--workflow" : ""}`}>
           {isWorkflowView ? (
             <>
               <span className="workflow-logo" aria-hidden>
@@ -273,15 +386,10 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
       <div className="replay-layout">
         {viewMode === "timeline" && timelineTab === "deliverables" && (
           <aside className="replay-sidebar">
-            <PlanNodesPanel
-              session={session}
-              selectedSegmentIndex={selectedSegmentIndex}
-              onSelectSegment={handleSelectSegment}
-            />
-            <ChangedFilesList
-              session={session}
-              selectedPath={selectedFilePath}
-              onSelectFile={handleSelectFile}
+            <DeliverablesList
+              items={deliverables}
+              selectedId={selectedDeliverableId}
+              onSelect={handleSelectDeliverable}
             />
           </aside>
         )}
@@ -335,56 +443,6 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
                     onSeek={handleSeek}
                     criticalEvents={criticalEvents}
                   />
-                </>
-              ) : timelineTab === "context" ? (
-                <ContextPathView
-                  session={session}
-                  currentIndex={currentIndex}
-                  onSeek={handleSeek}
-                />
-              ) : selectedFilePath ? (
-                <FileEvolutionView
-                  session={session}
-                  path={selectedFilePath}
-                  revisionIndex={selectedRevisionIndex}
-                  onRevisionChange={setSelectedRevisionIndex}
-                />
-              ) : selectedSegment ? (
-                <>
-                  <section className="reviewer-highlights">
-                    <header className="reviewer-highlights__header">
-                      <h2>Deliverable Summary</h2>
-                      <span>Clean summary first, details on demand.</span>
-                    </header>
-                    <div className="reviewer-highlights__grid">
-                      <article className="reviewer-highlights__card">
-                        <h3>Outcome</h3>
-                        <p>
-                          {reviewer.outcome} · confidence {Math.round(reviewer.confidence_estimate * 100)}%
-                        </p>
-                        <p>{reviewer.goal}</p>
-                      </article>
-                      <article className="reviewer-highlights__card">
-                        <h3>Changed Scope</h3>
-                        <p>{changedFiles.length} files changed</p>
-                        <p>{normalized.impacts.length} impact artifact(s)</p>
-                      </article>
-                      <article className="reviewer-highlights__card">
-                        <h3>Quality & Risk</h3>
-                        <p>
-                          Checks: {reviewer.verification_summary.pass} pass /{" "}
-                          {reviewer.verification_summary.fail} fail / {reviewer.verification_summary.unknown} unknown
-                        </p>
-                        <p>
-                          High-risk items:{" "}
-                          {
-                            reviewer.high_risk_items.filter((item) => item.level === "high")
-                              .length
-                          }
-                        </p>
-                      </article>
-                    </div>
-                  </section>
                   <section className="reviewer-focus">
                     <header className="reviewer-focus__alert">
                       <h2>Intent Cost</h2>
@@ -444,35 +502,9 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
                             </tbody>
                           </table>
                         </div>
-                        {selectedIntentCost ? (
-                          <div className="reviewer-focus__card reviewer-focus__card--wide">
-                            <h3>Token Drill-down</h3>
-                            {tokenBreakdown.intent_breakdown
-                              .filter((row) => row.intent_id === selectedIntentCost)
-                              .map((row) => (
-                                <ul key={row.intent_id}>
-                                  {row.supporting_events.slice(0, 12).map((item) => (
-                                    <li key={item.checkpoint_event_id}>
-                                      <button type="button" onClick={() => handleSeek(Math.max(0, row.event_window.start_seq - 1))}>
-                                        {item.checkpoint_event_id}
-                                      </button>{" "}
-                                      · total {item.total_tokens} · context {item.context_tokens} · output{" "}
-                                      {item.output_tokens} · unknown {item.unknown_tokens}
-                                    </li>
-                                  ))}
-                                </ul>
-                              ))}
-                          </div>
-                        ) : null}
                       </>
                     ) : null}
                   </section>
-                  <SegmentDetailView
-                    session={session}
-                    segment={selectedSegment}
-                    segmentIndex={selectedSegmentIndex ?? 0}
-                    onOpenFileEvolution={handleOpenFileEvolution}
-                  />
                   <section className="reviewer-focus">
                     <header className="reviewer-focus__alert">
                       <h2>User-Triggered Workflow Standardization</h2>
@@ -539,15 +571,91 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
                     ) : null}
                   </section>
                 </>
+              ) : timelineTab === "context" ? (
+                <ContextPathView
+                  session={session}
+                  currentIndex={currentIndex}
+                  onSeek={handleSeek}
+                />
+              ) : selectedDeliverable ? (
+                <>
+                  <section className="deliverable-summary">
+                    <header className="deliverable-summary__header">
+                      <h2>{selectedDeliverable.title}</h2>
+                      <p>{selectedDeliverable.path}</p>
+                    </header>
+                    <div className="deliverable-summary__meta">
+                      <span>Status: {selectedDeliverable.status}</span>
+                      <span className={`risk risk-${selectedDeliverable.risk}`}>Risk: {selectedDeliverable.risk}</span>
+                      <span>Est. tokens: {selectedDeliverable.token_total.toLocaleString()}</span>
+                      <span>
+                        Est. cost: {selectedDeliverable.estimated_cost_usd != null ? `$${selectedDeliverable.estimated_cost_usd}` : "-"}
+                      </span>
+                    </div>
+                  </section>
+
+                  <div className="deliverable-tabs">
+                    <button
+                      type="button"
+                      className={deliverableTab === "what_changed" ? "active" : ""}
+                      onClick={() => setDeliverableTab("what_changed")}
+                    >
+                      What changed
+                    </button>
+                    <button
+                      type="button"
+                      className={deliverableTab === "why_changed" ? "active" : ""}
+                      onClick={() => setDeliverableTab("why_changed")}
+                    >
+                      Why changed
+                    </button>
+                    <button
+                      type="button"
+                      className={deliverableTab === "cost" ? "active" : ""}
+                      onClick={() => setDeliverableTab("cost")}
+                    >
+                      Cost
+                    </button>
+                  </div>
+
+                  {deliverableTab === "what_changed" ? (
+                    <section className="deliverable-pane">
+                      <p className="deliverable-pane__hint">Clean summary first, detail on demand.</p>
+                      {selectedDeliverable.event_indices.length > 0 ? (
+                        <div className="deliverable-event-links">
+                          {selectedDeliverable.event_indices.slice(-8).map((index) => (
+                            <button
+                              type="button"
+                              key={`${selectedDeliverable.id}-${index}`}
+                              onClick={() => handleOpenFileEvolution(selectedDeliverable.path, index)}
+                            >
+                              Jump to event #{index + 1}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                      {selectedFilePath ? (
+                        <FileEvolutionView
+                          session={session}
+                          path={selectedFilePath}
+                          revisionIndex={selectedRevisionIndex}
+                          onRevisionChange={setSelectedRevisionIndex}
+                        />
+                      ) : null}
+                    </section>
+                  ) : null}
+
+                  {deliverableTab === "why_changed" ? (
+                    <section className="deliverable-pane">{renderWhyChanged(selectedDeliverable)}</section>
+                  ) : null}
+
+                  {deliverableTab === "cost" ? (
+                    <section className="deliverable-pane">{renderCost(selectedDeliverable)}</section>
+                  ) : null}
+                </>
               ) : (
                 <div className="replay-placeholder">
-                  <p>Select a changed file or plan step to open deliverable details.</p>
-                  {segments.length === 0 && (
-                    <p className="replay-placeholder-note">
-                      This session has no explicit intent boundaries. The UI can still
-                      render lifecycle using fallback grouping.
-                    </p>
-                  )}
+                  <p>Select a deliverable to inspect what changed, why it changed, and associated intent cost.</p>
                 </div>
               )}
             </>
