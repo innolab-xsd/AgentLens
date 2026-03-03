@@ -39,6 +39,24 @@ function readFileAsText(file: File): Promise<string> {
   });
 }
 
+function getSessionRef(session: LocalSessionSummary): string {
+  return (session.session_id || session.key || "").trim();
+}
+
+async function readJsonLike(response: Response): Promise<Record<string, unknown>> {
+  const raw = await response.text();
+  if (!raw.trim()) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+    return {};
+  } catch {
+    return { error: `Non-JSON response (${response.status}).` };
+  }
+}
+
 export function LoadSession({ onLoad, onError }: LoadSessionProps) {
   const mcpInputRef = useRef<HTMLInputElement>(null);
   const rawInputRef = useRef<HTMLInputElement>(null);
@@ -149,13 +167,17 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
   );
 
   const handleImportMcpFiles = useCallback(
-    async (files: FileList | File[] | null) => {
+    async (
+      files: FileList | File[] | null,
+      options?: { allowLocalLoadFallback?: boolean },
+    ): Promise<string | null> => {
       const fileArray = !files
         ? []
         : Array.isArray(files)
           ? files
           : Array.from(files);
-      if (fileArray.length === 0) return;
+      if (fileArray.length === 0) return null;
+      const allowLocalLoadFallback = options?.allowLocalLoadFallback ?? true;
       try {
         setImportStatus("Importing canonical MCP logs...");
         const payloadFiles = await Promise.all(
@@ -169,17 +191,22 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ files: payloadFiles }),
         });
-        const data = (await response.json()) as McpImportResponse & {
+        const data = (await readJsonLike(response)) as Partial<McpImportResponse> & {
           error?: string;
         };
         if (!response.ok)
           throw new Error(
-            data.error ?? `MCP import failed (${response.status})`,
+            data.error ??
+              `MCP import failed (${response.status}). Ensure dashboard API is running and reachable.`,
           );
+        if (!data.import_set_id) {
+          throw new Error("MCP import response missing `import_set_id`.");
+        }
         const sessions = Array.isArray(data.sessions) ? data.sessions : [];
         setImportSetId(data.import_set_id);
         setImportedSessions(sessions);
-        setRawTargetSessionId(sessions[0]?.session_id ?? "");
+        const defaultSessionRef = sessions[0] ? getSessionRef(sessions[0]) : "";
+        setRawTargetSessionId(defaultSessionRef);
         const rejected = Array.isArray(data.rejected_files)
           ? data.rejected_files.length
           : 0;
@@ -189,11 +216,13 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
         setPendingMcpFiles([]);
         setSelectionExpanded(false);
         await fetchLocalSessions();
+        return defaultSessionRef || null;
       } catch (err) {
         // Fallback: allow direct local canonical load when dashboard API is stale/unavailable.
         try {
           const first = fileArray[0];
           if (!first) throw err;
+          if (!allowLocalLoadFallback) throw err;
           const text = await readFileAsText(first);
           const localResult = validateSession(text);
           if (!localResult.success) {
@@ -209,7 +238,7 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
           );
           setPendingMcpFiles([]);
           setSelectionExpanded(false);
-          return;
+          return localResult.data.id;
         } catch {
           const message =
             err instanceof Error
@@ -217,6 +246,7 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
               : "Failed to import MCP sessions.";
           setImportStatus(message);
           onError(message);
+          return null;
         }
       }
     },
@@ -240,7 +270,7 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
 
   const importPendingMcpFiles = useCallback(() => {
     if (pendingMcpFiles.length === 0) return;
-    void handleImportMcpFiles(pendingMcpFiles);
+    void handleImportMcpFiles(pendingMcpFiles, { allowLocalLoadFallback: true });
   }, [pendingMcpFiles, handleImportMcpFiles]);
 
   const handleMergeRawLog = useCallback(
@@ -266,7 +296,7 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
             dedupe: true,
           }),
         });
-        const data = (await response.json()) as {
+        const data = (await readJsonLike(response)) as {
           error?: string;
           inserted?: number;
           skipped_duplicates?: number;
@@ -302,6 +332,9 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
     "Recommended: import only relevant or consecutive sessions from the same conversation/thread.";
   const step2Instruction =
     "Raw merge is available only after MCP import and only merges into an imported target session.";
+  const canMergeRaw = Boolean(importSetId && rawTargetSessionId);
+  const canSelectRawLogs = canMergeRaw || pendingMcpFiles.length > 0;
+  const canLaunchSession = Boolean(rawTargetSessionId || pendingMcpFiles.length > 0);
 
   return (
     <div className="load-session">
@@ -541,13 +574,46 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
                 </div>
                 <button
                   type="button"
-                  onClick={() => rawInputRef.current?.click()}
+                  onClick={() => {
+                    if (canMergeRaw) {
+                      rawInputRef.current?.click();
+                      return;
+                    }
+                    if (pendingMcpFiles.length > 0) {
+                      void (async () => {
+                        const importedRef = await handleImportMcpFiles(pendingMcpFiles, {
+                          allowLocalLoadFallback: false,
+                        });
+                        if (importedRef) {
+                          setRawTargetSessionId(importedRef);
+                          rawInputRef.current?.click();
+                        }
+                      })();
+                    }
+                  }}
                   className="load-session__browse-btn load-session__browse-btn--secondary"
-                  disabled={!importSetId || !rawTargetSessionId}
+                  disabled={!canSelectRawLogs}
                 >
                   Select Raw Logs
                 </button>
               </div>
+              {importedSessions.length > 0 ? (
+                <select
+                  className="load-session__target-select"
+                  value={rawTargetSessionId}
+                  onChange={(event) => setRawTargetSessionId(event.target.value)}
+                  aria-label="Select imported target session for merge and launch"
+                >
+                  {importedSessions.map((session) => {
+                    const ref = getSessionRef(session);
+                    return (
+                      <option key={ref} value={ref}>
+                        {session.goal ?? session.session_id ?? session.key}
+                      </option>
+                    );
+                  })}
+                </select>
+              ) : null}
               {rawMergeStatus ? (
                 <p className="load-session__drop-status">{rawMergeStatus}</p>
               ) : null}
@@ -565,12 +631,27 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
         <div className="load-session__workflow-right">
           <button
             type="button"
-            onClick={() => void openSessionById(rawTargetSessionId)}
-            className={`load-session__open-cta ${importedSessions.length > 0 ? "load-session__open-cta--ready" : ""}`}
-            disabled={importedSessions.length === 0}
+            onClick={() => {
+              if (rawTargetSessionId) {
+                void openSessionById(rawTargetSessionId);
+                return;
+              }
+              if (pendingMcpFiles.length > 0) {
+                void (async () => {
+                  const importedRef = await handleImportMcpFiles(pendingMcpFiles, {
+                    allowLocalLoadFallback: true,
+                  });
+                  if (importedRef) {
+                    await openSessionById(importedRef);
+                  }
+                })();
+              }
+            }}
+            className={`load-session__open-cta ${canLaunchSession ? "load-session__open-cta--ready" : ""}`}
+            disabled={!canLaunchSession}
             title={
-              importedSessions.length === 0
-                ? "Import session logs first"
+              !canLaunchSession
+                ? "Select or import session logs first"
                 : "Launch session"
             }
           >
