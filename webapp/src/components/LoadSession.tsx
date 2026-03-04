@@ -43,7 +43,9 @@ function getSessionRef(session: LocalSessionSummary): string {
   return (session.session_id || session.key || "").trim();
 }
 
-async function readJsonLike(response: Response): Promise<Record<string, unknown>> {
+async function readJsonLike(
+  response: Response,
+): Promise<Record<string, unknown>> {
   const raw = await response.text();
   if (!raw.trim()) return {};
   try {
@@ -191,7 +193,9 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ files: payloadFiles }),
         });
-        const data = (await readJsonLike(response)) as Partial<McpImportResponse> & {
+        const data = (await readJsonLike(
+          response,
+        )) as Partial<McpImportResponse> & {
           error?: string;
         };
         if (!response.ok)
@@ -270,7 +274,9 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
 
   const importPendingMcpFiles = useCallback(() => {
     if (pendingMcpFiles.length === 0) return;
-    void handleImportMcpFiles(pendingMcpFiles, { allowLocalLoadFallback: true });
+    void handleImportMcpFiles(pendingMcpFiles, {
+      allowLocalLoadFallback: true,
+    });
   }, [pendingMcpFiles, handleImportMcpFiles]);
 
   const handleMergeRawLog = useCallback(
@@ -334,7 +340,9 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
     "Raw merge is available only after MCP import and only merges into an imported target session.";
   const canMergeRaw = Boolean(importSetId && rawTargetSessionId);
   const canSelectRawLogs = canMergeRaw || pendingMcpFiles.length > 0;
-  const canLaunchSession = Boolean(rawTargetSessionId || pendingMcpFiles.length > 0);
+  const canLaunchSession = Boolean(
+    rawTargetSessionId || pendingMcpFiles.length > 0,
+  );
 
   return (
     <div className="load-session">
@@ -434,7 +442,9 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
                     <div className="load-session__drop-title">
                       Import Canonical MCP Files
                     </div>
-                    <p className="load-session__drop-desc">{step1Instruction}</p>
+                    <p className="load-session__drop-desc">
+                      {step1Instruction}
+                    </p>
                     <button
                       type="button"
                       onClick={(e) => {
@@ -459,7 +469,7 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
                       Browse Files
                     </button>
                     <p className="load-session__drop-formats">
-                      Supported formats: .json, .log, .mcp
+                      Supported formats: .jsonl
                     </p>
                   </>
                 ) : (
@@ -469,7 +479,8 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
                     </div>
                     <div className="load-session__selection-summary">
                       <span className="load-session__selection-count">
-                        {pendingMcpFiles.length} file{pendingMcpFiles.length !== 1 ? "s" : ""} selected
+                        {pendingMcpFiles.length} file
+                        {pendingMcpFiles.length !== 1 ? "s" : ""} selected
                       </span>
                       <button
                         type="button"
@@ -486,8 +497,14 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
                       <div className="load-session__selection-list">
                         <ul className="load-session__selection-ul">
                           {pendingMcpFiles.map((file, i) => (
-                            <li key={`${file.name}-${i}`} className="load-session__selection-li">
-                              <span className="load-session__selection-filename" title={file.name}>
+                            <li
+                              key={`${file.name}-${i}`}
+                              className="load-session__selection-li"
+                            >
+                              <span
+                                className="load-session__selection-filename"
+                                title={file.name}
+                              >
                                 {file.name}
                               </span>
                               <button
@@ -529,7 +546,7 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
                       </div>
                     )}
                     <p className="load-session__drop-formats">
-                      Supported formats: .json, .log, .mcp
+                      Supported formats: .jsonl
                     </p>
                   </>
                 )}
@@ -581,9 +598,12 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
                     }
                     if (pendingMcpFiles.length > 0) {
                       void (async () => {
-                        const importedRef = await handleImportMcpFiles(pendingMcpFiles, {
-                          allowLocalLoadFallback: false,
-                        });
+                        const importedRef = await handleImportMcpFiles(
+                          pendingMcpFiles,
+                          {
+                            allowLocalLoadFallback: false,
+                          },
+                        );
                         if (importedRef) {
                           setRawTargetSessionId(importedRef);
                           rawInputRef.current?.click();
@@ -601,7 +621,9 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
                 <select
                   className="load-session__target-select"
                   value={rawTargetSessionId}
-                  onChange={(event) => setRawTargetSessionId(event.target.value)}
+                  onChange={(event) =>
+                    setRawTargetSessionId(event.target.value)
+                  }
                   aria-label="Select imported target session for merge and launch"
                 >
                   {importedSessions.map((session) => {
@@ -638,9 +660,12 @@ export function LoadSession({ onLoad, onError }: LoadSessionProps) {
               }
               if (pendingMcpFiles.length > 0) {
                 void (async () => {
-                  const importedRef = await handleImportMcpFiles(pendingMcpFiles, {
-                    allowLocalLoadFallback: true,
-                  });
+                  const importedRef = await handleImportMcpFiles(
+                    pendingMcpFiles,
+                    {
+                      allowLocalLoadFallback: true,
+                    },
+                  );
                   if (importedRef) {
                     await openSessionById(importedRef);
                   }
