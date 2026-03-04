@@ -26,8 +26,12 @@ function toStringValue(v: unknown): string | undefined {
   return typeof v === "string" && v.trim() !== "" ? v : undefined;
 }
 
-function getIntentId(event: SessionEvent): string | undefined {
+export function getIntentIdFromEvent(event: SessionEvent): string | undefined {
   return event.scope?.intent_id ?? toStringValue(event.payload.intent_id);
+}
+
+function getIntentId(event: SessionEvent): string | undefined {
+  return getIntentIdFromEvent(event);
 }
 
 function getPath(event: SessionEvent): string | undefined {

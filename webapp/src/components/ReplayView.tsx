@@ -8,7 +8,7 @@ import { ReviewerFocusPanel } from "./ReviewerFocusPanel";
 import { ContextPathView } from "./ContextPathView";
 import { DeliverablesList } from "./DeliverablesList";
 import { FileEvolutionView } from "./FileEvolutionView";
-import { deriveDeliverables, type DeliverableItem } from "../lib/deliverables";
+import { deriveDeliverables, getIntentIdFromEvent, type DeliverableItem } from "../lib/deliverables";
 import {
   deriveIntentTokenBreakdown,
   generateFollowupArtifacts,
@@ -283,11 +283,27 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
           </p>
         );
       }
+      const eventIndicesByIntent = new Map<string, number[]>();
+      for (const index of deliverable.event_indices) {
+        const event = session.events[index];
+        if (!event) continue;
+        const intentId =
+          getIntentIdFromEvent(event) ?? "__unknown_intent__";
+        const list = eventIndicesByIntent.get(intentId) ?? [];
+        list.push(index);
+        eventIndicesByIntent.set(intentId, list);
+      }
+      const primaryId =
+        deliverable.primary_intent_id ?? contributions[0]?.intent_id;
+
       return (
         <div className="deliverable-intents">
-          {contributions.map((item, index) => {
+          {contributions.map((item) => {
             const intent = intentById.get(item.intent_id);
-            const roleLabel = index === 0 ? "Primary intent" : "Related intent";
+            const isPrimary = item.intent_id === primaryId;
+            const roleLabel = isPrimary ? "Primary intent" : "Contributing intent";
+            const relatedIndices =
+              eventIndicesByIntent.get(item.intent_id) ?? [];
             return (
               <article
                 className="deliverable-intent-card"
@@ -295,7 +311,15 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
               >
                 <header>
                   <h4>{intent?.intent_title ?? item.intent_id}</h4>
-                  <span>{roleLabel}</span>
+                  <span
+                    className={
+                      isPrimary
+                        ? "deliverable-intent-card__badge deliverable-intent-card__badge--primary"
+                        : "deliverable-intent-card__badge"
+                    }
+                  >
+                    {roleLabel}
+                  </span>
                 </header>
                 <p>
                   Contribution: <strong>{formatPercent(item.percent)}</strong>
@@ -310,13 +334,33 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
                 ) : (
                   <p>No token telemetry linked for this intent.</p>
                 )}
+                {relatedIndices.length > 0 ? (
+                  <div className="deliverable-intent-card__events">
+                    <span className="deliverable-intent-card__events-label">
+                      Related events:
+                    </span>
+                    {relatedIndices.map((evIndex) => (
+                      <button
+                        type="button"
+                        key={evIndex}
+                        className="deliverable-intent-card__event-btn"
+                        onClick={() => {
+                          handleOpenFileEvolution(deliverable.path, evIndex);
+                          setDeliverableTab("what_changed");
+                        }}
+                      >
+                        #{evIndex + 1}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
               </article>
             );
           })}
         </div>
       );
     },
-    [intentById],
+    [intentById, session.events, handleOpenFileEvolution, setDeliverableTab],
   );
 
   const renderCost = useCallback(
@@ -464,49 +508,51 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
             Pivot
           </button>
         </nav>
-        <div className="replay-toolbar" role="group" aria-label="Playback">
-          <button
-            type="button"
-            className="replay-toolbar__play"
-            onClick={isPlaying ? handlePause : handlePlay}
-            disabled={eventCount === 0}
-            aria-label={isPlaying ? "Pause" : "Play"}
-          >
-            <span aria-hidden>{isPlaying ? "⏸" : "▶"}</span>
-          </button>
-          <div
-            className="replay-toolbar__progress"
-            role="progressbar"
-            aria-valuenow={currentIndex + 1}
-            aria-valuemin={1}
-            aria-valuemax={eventCount || 1}
-            aria-label="Event progress"
-            onClick={(e) => {
-              if (eventCount <= 0) return;
-              const rect = e.currentTarget.getBoundingClientRect();
-              const x = e.clientX - rect.left;
-              const idx = Math.min(
-                eventCount - 1,
-                Math.floor((x / rect.width) * eventCount),
-              );
-              handleSeek(Math.max(0, idx));
-            }}
-          >
+        {mainView === "pivot" && (
+          <div className="replay-toolbar" role="group" aria-label="Playback">
+            <button
+              type="button"
+              className="replay-toolbar__play"
+              onClick={isPlaying ? handlePause : handlePlay}
+              disabled={eventCount === 0}
+              aria-label={isPlaying ? "Pause" : "Play"}
+            >
+              <span aria-hidden>{isPlaying ? "⏸" : "▶"}</span>
+            </button>
             <div
-              className="replay-toolbar__progress-fill"
-              style={{
-                width: `${
-                  eventCount <= 1
-                    ? 100
-                    : (100 * (currentIndex + 1)) / eventCount
-                }%`,
+              className="replay-toolbar__progress"
+              role="progressbar"
+              aria-valuenow={currentIndex + 1}
+              aria-valuemin={1}
+              aria-valuemax={eventCount || 1}
+              aria-label="Event progress"
+              onClick={(e) => {
+                if (eventCount <= 0) return;
+                const rect = e.currentTarget.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const idx = Math.min(
+                  eventCount - 1,
+                  Math.floor((x / rect.width) * eventCount),
+                );
+                handleSeek(Math.max(0, idx));
               }}
-            />
+            >
+              <div
+                className="replay-toolbar__progress-fill"
+                style={{
+                  width: `${
+                    eventCount <= 1
+                      ? 100
+                      : (100 * (currentIndex + 1)) / eventCount
+                  }%`,
+                }}
+              />
+            </div>
+            <span className="replay-toolbar__label" aria-hidden>
+              {eventCount ? `${currentIndex + 1} / ${eventCount}` : "—"}
+            </span>
           </div>
-          <span className="replay-toolbar__label" aria-hidden>
-            {eventCount ? `${currentIndex + 1} / ${eventCount}` : "—"}
-          </span>
-        </div>
+        )}
       </section>
       <div className="replay-layout">
         {mainView === "deliverables" && (
@@ -825,13 +871,20 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
 
                   {deliverableTab === "what_changed" ? (
                     <section className="deliverable-pane">
+                      <h3 className="deliverable-pane__title">
+                        File evolution / diffs
+                      </h3>
                       <p className="deliverable-pane__hint">
-                        Clean summary first, detail on demand.
+                        Revisions and diffs for this file. Jump to an event to
+                        see the change at that point in the session.
                       </p>
                       {selectedDeliverable.event_indices.length > 0 ? (
                         <div className="deliverable-event-links">
+                          <span className="deliverable-event-links__label">
+                            Jump to event:
+                          </span>
                           {selectedDeliverable.event_indices
-                            .slice(-8)
+                            .slice(-12)
                             .map((index) => (
                               <button
                                 type="button"
@@ -843,7 +896,7 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
                                   )
                                 }
                               >
-                                Jump to event #{index + 1}
+                                #{index + 1}
                               </button>
                             ))}
                         </div>

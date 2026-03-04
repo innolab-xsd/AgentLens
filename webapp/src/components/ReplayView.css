@@ -413,6 +413,12 @@
   margin-top: 0.75rem;
 }
 
+.deliverable-pane__title {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
 .deliverable-pane__hint {
   margin: 0 0 0.5rem;
   font-size: 0.84rem;
@@ -422,8 +428,15 @@
 .deliverable-event-links {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 0.35rem;
   margin-bottom: 0.6rem;
+}
+
+.deliverable-event-links__label {
+  font-size: 0.8rem;
+  color: rgba(148, 163, 184, 0.9);
+  margin-right: 0.2rem;
 }
 
 .deliverable-event-links button {
@@ -469,7 +482,48 @@
   color: rgba(148, 163, 184, 0.95);
 }
 
+.deliverable-intent-card__badge {
+  font-size: 0.7rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 6px;
+  background: rgba(148, 163, 184, 0.2);
+  color: rgba(148, 163, 184, 0.95);
+}
+
+.deliverable-intent-card__badge--primary {
+  background: rgba(34, 197, 94, 0.25);
+  color: rgba(134, 239, 172, 0.98);
+}
+
 .deliverable-intent-card p {
   margin: 0.4rem 0 0;
   font-size: 0.82rem;
+}
+
+.deliverable-intent-card__events {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.deliverable-intent-card__events-label {
+  font-size: 0.78rem;
+  color: rgba(148, 163, 184, 0.9);
+  margin-right: 0.2rem;
+}
+
+.deliverable-intent-card__event-btn {
+  padding: 0.15rem 0.35rem;
+  font-size: 0.72rem;
+  border-radius: 6px;
+  border: 1px solid rgba(14, 165, 233, 0.3);
+  background: rgba(15, 23, 42, 0.6);
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+}
+
+.deliverable-intent-card__event-btn:hover {
+  border-color: rgba(56, 189, 248, 0.55);
 }
