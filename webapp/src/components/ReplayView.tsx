@@ -473,88 +473,49 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
           {session.id} · {eventCount} events
         </p>
       </header>
-      <section
-        className="replay-controls"
-        aria-label="Replay controls and view switcher"
-      >
-        <nav className="replay-nav" aria-label="View switcher">
+      <div className="replay-body">
+        <nav
+          className="replay-nav-strip"
+          aria-label="View switcher"
+        >
           <button
             type="button"
-            className={mainView === "reviewer" ? "active" : ""}
+            className={`replay-nav-strip__btn ${mainView === "reviewer" ? "active" : ""}`}
             onClick={() => setMainView("reviewer")}
+            title="Dashboard"
+            aria-label="Dashboard"
           >
-            Dashboard
+            <span aria-hidden>▤</span>
           </button>
           <button
             type="button"
-            className={mainView === "deliverables" ? "active" : ""}
+            className={`replay-nav-strip__btn ${mainView === "deliverables" ? "active" : ""}`}
             onClick={() => setMainView("deliverables")}
+            title="Deliverables"
+            aria-label="Deliverables"
           >
-            Deliverables
+            <span aria-hidden>☑</span>
           </button>
           <button
             type="button"
-            className={mainView === "context" ? "active" : ""}
+            className={`replay-nav-strip__btn ${mainView === "context" ? "active" : ""}`}
             onClick={() => setMainView("context")}
+            title="Context"
+            aria-label="Context"
           >
-            Context
+            <span aria-hidden>⊞</span>
           </button>
           <button
             type="button"
-            className={`replay-nav__pivot ${mainView === "pivot" ? "active" : ""}`}
+            className={`replay-nav-strip__btn replay-nav-strip__btn--pivot ${mainView === "pivot" ? "active" : ""}`}
             onClick={() => setMainView("pivot")}
             title="Pivot: immersive mission flow"
+            aria-label="Pivot"
           >
-            Pivot
+            <span aria-hidden>◇</span>
           </button>
         </nav>
-        {mainView === "pivot" && (
-          <div className="replay-toolbar" role="group" aria-label="Playback">
-            <button
-              type="button"
-              className="replay-toolbar__play"
-              onClick={isPlaying ? handlePause : handlePlay}
-              disabled={eventCount === 0}
-              aria-label={isPlaying ? "Pause" : "Play"}
-            >
-              <span aria-hidden>{isPlaying ? "⏸" : "▶"}</span>
-            </button>
-            <div
-              className="replay-toolbar__progress"
-              role="progressbar"
-              aria-valuenow={currentIndex + 1}
-              aria-valuemin={1}
-              aria-valuemax={eventCount || 1}
-              aria-label="Event progress"
-              onClick={(e) => {
-                if (eventCount <= 0) return;
-                const rect = e.currentTarget.getBoundingClientRect();
-                const x = e.clientX - rect.left;
-                const idx = Math.min(
-                  eventCount - 1,
-                  Math.floor((x / rect.width) * eventCount),
-                );
-                handleSeek(Math.max(0, idx));
-              }}
-            >
-              <div
-                className="replay-toolbar__progress-fill"
-                style={{
-                  width: `${
-                    eventCount <= 1
-                      ? 100
-                      : (100 * (currentIndex + 1)) / eventCount
-                  }%`,
-                }}
-              />
-            </div>
-            <span className="replay-toolbar__label" aria-hidden>
-              {eventCount ? `${currentIndex + 1} / ${eventCount}` : "—"}
-            </span>
-          </div>
-        )}
-      </section>
-      <div className="replay-layout">
+        <div className="replay-layout">
         {mainView === "deliverables" && (
           <aside className="replay-sidebar">
             <DeliverablesList
@@ -935,6 +896,7 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
             </>
           )}
         </main>
+        </div>
       </div>
     </div>
   );
