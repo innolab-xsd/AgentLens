@@ -101,7 +101,7 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [selectedRevisionIndex, setSelectedRevisionIndex] = useState(0);
   type MainView = "deliverables" | "context" | "reviewer" | "pivot";
-  const [mainView, setMainView] = useState<MainView>("deliverables");
+  const [mainView, setMainView] = useState<MainView>("reviewer");
   const [deliverableTab, setDeliverableTab] =
     useState<DeliverableTab>("what_changed");
   const [selectedDeliverableId, setSelectedDeliverableId] = useState<
@@ -480,6 +480,13 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
         <nav className="replay-nav" aria-label="View switcher">
           <button
             type="button"
+            className={mainView === "reviewer" ? "active" : ""}
+            onClick={() => setMainView("reviewer")}
+          >
+            Dashboard
+          </button>
+          <button
+            type="button"
             className={mainView === "deliverables" ? "active" : ""}
             onClick={() => setMainView("deliverables")}
           >
@@ -491,13 +498,6 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
             onClick={() => setMainView("context")}
           >
             Context
-          </button>
-          <button
-            type="button"
-            className={mainView === "reviewer" ? "active" : ""}
-            onClick={() => setMainView("reviewer")}
-          >
-            Reviewer
           </button>
           <button
             type="button"
