@@ -1,6 +1,6 @@
 {
   "name": "@xiaolei.shawn/mcp-server",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Local-first MCP server for AI agent session auditing, with embedded dashboard.",
   "type": "module",
   "main": "dist/index.js",
