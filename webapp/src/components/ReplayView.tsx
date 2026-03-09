@@ -5,6 +5,7 @@ import { FlowView } from "./FlowView";
 import { ReviewerHighlights } from "./ReviewerHighlights";
 import { ReviewerFocusPanel } from "./ReviewerFocusPanel";
 import { ContextPathView } from "./ContextPathView";
+import { OrchestrationView } from "./OrchestrationView";
 import { DeliverablesList } from "./DeliverablesList";
 import { DeliverableWorkOverview } from "./DeliverableWorkOverview";
 import { deriveDeliverables, getIntentIdFromEvent, type DeliverableItem } from "../lib/deliverables";
@@ -101,8 +102,8 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
   }, [session.events]);
 
   const [currentIndex, setCurrentIndex] = useState(0);
-  type MainView = "deliverables" | "context" | "reviewer" | "pivot";
-  const [mainView, setMainView] = useState<MainView>("reviewer");
+  type MainView = "orchestration" | "deliverables" | "context" | "reviewer" | "pivot";
+  const [mainView, setMainView] = useState<MainView>("orchestration");
   const [deliverableTab, setDeliverableTab] =
     useState<DeliverableTab>("why_changed");
   const [selectedDeliverableId, setSelectedDeliverableId] = useState<
@@ -514,6 +515,15 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
         >
           <button
             type="button"
+            className={`replay-nav-strip__btn ${mainView === "orchestration" ? "active" : ""}`}
+            onClick={() => setMainView("orchestration")}
+            title="Orchestration"
+            aria-label="Orchestration"
+          >
+            <span aria-hidden>⎇</span>
+          </button>
+          <button
+            type="button"
             className={`replay-nav-strip__btn ${mainView === "reviewer" ? "active" : ""}`}
             onClick={() => setMainView("reviewer")}
             title="Dashboard"
@@ -805,6 +815,11 @@ export function ReplayView({ session, onBack }: ReplayViewProps) {
                     ) : null}
                   </section>
                 </>
+              ) : mainView === "orchestration" ? (
+                <OrchestrationView
+                  session={session}
+                  onSeek={handleSeek}
+                />
               ) : mainView === "context" ? (
                 <ContextPathView
                   session={session}

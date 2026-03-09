@@ -1,0 +1,136 @@
+.orchestration {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.orchestration__header h2 {
+  margin: 0;
+}
+
+.orchestration__header p {
+  margin: 0.25rem 0 0;
+  color: rgba(148, 163, 184, 0.95);
+}
+
+.orchestration__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  font-size: 0.82rem;
+}
+
+.orchestration__summary span {
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 999px;
+  padding: 0.2rem 0.5rem;
+  background: rgba(15, 23, 42, 0.65);
+}
+
+.orchestration__dag {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 0.75rem;
+}
+
+.orchestration__lane {
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  border-radius: 12px;
+  padding: 0.65rem;
+  background: rgba(15, 23, 42, 0.56);
+}
+
+.orchestration__lane h3,
+.orchestration__bottlenecks h3,
+.orchestration__detail h3,
+.orchestration__detail h4 {
+  margin: 0 0 0.45rem;
+}
+
+.orchestration__lane-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.55rem;
+}
+
+.orchestration__node-card {
+  border: 1px solid rgba(13, 166, 242, 0.28);
+  border-radius: 10px;
+  background: rgba(2, 6, 23, 0.66);
+  color: rgba(255, 255, 255, 0.96);
+  text-align: left;
+  padding: 0.55rem;
+  cursor: pointer;
+}
+
+.orchestration__node-card:hover {
+  border-color: rgba(56, 189, 248, 0.58);
+}
+
+.orchestration__node-card.is-selected {
+  border-color: rgba(34, 211, 238, 0.9);
+  box-shadow: inset 0 0 0 1px rgba(186, 230, 253, 0.22);
+}
+
+.orchestration__node-card p {
+  margin: 0.22rem 0 0;
+  font-size: 0.8rem;
+}
+
+.orchestration__node-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.35rem;
+}
+
+.orchestration__node-head h3 {
+  margin: 0;
+  font-size: 0.93rem;
+}
+
+.orchestration__node-head span {
+  font-size: 0.72rem;
+  color: rgba(148, 163, 184, 0.95);
+}
+
+.orchestration__bottlenecks,
+.orchestration__detail {
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  border-radius: 12px;
+  padding: 0.65rem;
+  background: rgba(15, 23, 42, 0.5);
+}
+
+.orchestration__bottlenecks ul {
+  margin: 0;
+  padding-left: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.orchestration__detail p {
+  margin: 0.25rem 0;
+}
+
+.orchestration__detail-actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.45rem;
+}
+
+.orchestration__detail-actions button {
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.75);
+  color: rgba(255, 255, 255, 0.95);
+  padding: 0.3rem 0.55rem;
+  cursor: pointer;
+}
+
+@media (max-width: 960px) {
+  .orchestration__dag {
+    grid-template-columns: 1fr;
+  }
+}
