@@ -71,6 +71,11 @@ export interface CanonicalEvent {
     intent_id?: string;
     file?: string;
     module?: string;
+    agent_id?: string;
+    parent_agent_id?: string;
+    delegation_id?: string;
+    thread_id?: string;
+    task_id?: string;
   };
   payload: CanonicalPayload;
   derived?: boolean;
