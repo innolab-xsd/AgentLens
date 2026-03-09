@@ -20,11 +20,13 @@ You can point the built-in dashboard server to any static bundle via `AL_DASHBOA
 
 - Canonical event capture with sequence ordering and timestamps
 - Gateway tools for low-friction agent instrumentation
-- Local dashboard server (`/api/sessions`, `/api/sessions/:key`)
+- Local dashboard server + API
 - Session storage on local disk (`AL_SESSIONS_DIR`)
 - Local gateway API for middleware (`/api/gateway/*`)
 - Export session JSON with normalized snapshot (`agentlens export`)
 - Raw log adapter ingestion (`agentlens ingest`, `/api/ingest`) with duplicate suppression
+- Canonical MCP session import + raw merge (`/api/import/mcp`, `/api/import/raw-merge`)
+- Local deterministic analysis endpoints (follow-up generation, token breakdown, subagent graph)
 
 ## Install
 
@@ -90,10 +92,15 @@ API endpoints:
 - `GET /api/sessions`
 - `GET /api/sessions/:key`
 - `GET /api/sessions/:key/export`
+- `GET /api/sessions/:key/token-breakdown`
+- `GET /api/sessions/:key/subagent-graph`
 - `POST /api/gateway/begin`
 - `POST /api/gateway/act`
 - `POST /api/gateway/end`
 - `POST /api/ingest`
+- `POST /api/import/mcp`
+- `POST /api/import/raw-merge`
+- `POST /api/followup/generate`
 
 When installed from npm, the dashboard UI is bundled and served automatically. When running from the repo, the server uses `../webapp/dist` if present (run `pnpm run build` in the webapp first). Override with `AL_DASHBOARD_WEBAPP_DIR`.
 
@@ -115,6 +122,13 @@ To reduce agent friction:
 - `AL_WORKSPACE_ROOT` (default: `process.cwd()`): workspace root for safe path operations.
 - `AL_AUTO_GOAL` (default: `Agent task execution`): fallback goal for auto-started sessions.
 - `AL_AUTO_USER_PROMPT` (default: `Auto-instrumented run`): fallback prompt for auto-started sessions.
+- `AL_AUTO_REPO` / `AL_AUTO_BRANCH`: optional repo/branch attached to auto-started sessions.
+- `AL_INGEST_FINGERPRINT_MIN_CONFIDENCE` (default: `0.62`): min confidence for automatic merge matching.
+- `AL_INGEST_FINGERPRINT_MAX_WINDOW_HOURS` (default: `72`): max time window for automatic merge matching.
+
+Compatibility aliases:
+
+- All `AL_*` variables above also accept `MCP_AL_*` aliases (for example `MCP_AL_SESSIONS_DIR`).
 
 ## Cursor/Codex MCP configuration example
 
@@ -190,3 +204,21 @@ Notes:
   - Min confidence: `AL_INGEST_FINGERPRINT_MIN_CONFIDENCE` (default `0.62`)
   - Max time window (hours): `AL_INGEST_FINGERPRINT_MAX_WINDOW_HOURS` (default `72`)
 - Ingest output includes `merge_strategy` (`explicit_merge`, `adapted_session_id`, `fingerprint_match`, `new_session`) and optional `merge_confidence`.
+
+## Import and merge via dashboard API
+
+1. Import one or more canonical MCP session logs:
+
+```bash
+curl -X POST http://127.0.0.1:4317/api/import/mcp \
+  -H "content-type: application/json" \
+  -d '{"files":[{"name":"session.jsonl","content":"...jsonl content..."}]}'
+```
+
+2. Merge supplemental raw logs into an imported session:
+
+```bash
+curl -X POST http://127.0.0.1:4317/api/import/raw-merge \
+  -H "content-type: application/json" \
+  -d '{"import_set_id":"iset_xxx","target_session_id":"sess_xxx","raw":"...raw log...","adapter":"auto","dedupe":true}'
+```
