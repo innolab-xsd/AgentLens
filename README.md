@@ -6,8 +6,9 @@ AgentLens (AL) is a local-first audit toolkit for AI agent sessions.
 
 ## Packages
 
-- **[@xiaolei.shawn/schema](schema/)** — Canonical event envelope and session schema validation.
-- **[@xiaolei.shawn/mcp-server](mcp-server/)** — MCP gateway server and local dashboard for recording and reviewing agent activity. See [mcp-server/README.md](mcp-server/README.md) for full docs.
+- **[@xiaolei.shawn/schema](schema/)** — canonical event envelope and session schema validation.
+- **[@xiaolei.shawn/mcp-server](mcp-server/)** — MCP gateway server + local dashboard API for recording, importing, and analyzing agent sessions.
+- **[webapp](webapp/)** — local replay/audit UI (orchestration, reviewer, deliverables, context, and pivot flow views).
 
 ## Install
 
@@ -41,7 +42,14 @@ pnpm install
 pnpm -r build
 ```
 
-See [mcp-server/README.md](mcp-server/README.md) for building/running individual packages.
+Run local services:
+
+```bash
+pnpm --filter @xiaolei.shawn/mcp-server start
+pnpm --filter webapp dev
+```
+
+See [mcp-server/README.md](mcp-server/README.md) and [webapp/README.md](webapp/README.md) for package-level details.
 
 ## Integration check
 
